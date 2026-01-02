@@ -1,9 +1,6 @@
 # Environment variables
 .env
 
-# Reference files (challenge docs)
-reference/
-
 # Python
 __pycache__/
 *.py[cod]
