@@ -2,6 +2,58 @@
 
 An AI-powered conversational agent that provides real-time stock market information and performs mathematical operations.
 
+## Challenge Requirements Compliance
+
+This project was built to fulfill the EverMe AI Engineer Technical Challenge. Below is a detailed compliance checklist:
+
+### Objective Requirements
+
+| Requirement | Status | Implementation |
+|-------------|--------|----------------|
+| AI agent with conversational interface | ✅ | Streamlit chat in `src/app.py` |
+| Real-time stock market information | ✅ | yfinance integration in `src/tools.py` |
+| Mathematical operations | ✅ | `calculate()` function |
+
+### Example Questions from Challenge
+
+| Question | Status | Function |
+|----------|--------|----------|
+| "What was the Bitcoin price yesterday?" | ✅ | `get_price_yesterday()` |
+| "And the current price of Tesla?" | ✅ | `get_current_price()` |
+| "What's the percentage change compared to yesterday?" | ✅ | `get_price_change()` |
+| "Can you calculate the average stock price of Apple over the last week?" | ✅ | `get_average_price()` |
+
+### Technical Guidelines
+
+| Guideline | Status | Details |
+|-----------|--------|---------|
+| OpenAI API integration | ✅ | OpenRouter (OpenAI-compatible) in `src/agent.py` |
+| Streamlit chat interface | ✅ | `src/app.py` |
+| Agentic workflow | ✅ | Tool calling implementation |
+| yfinance for market data | ✅ | `src/tools.py` |
+| Dockerfile provided | ✅ | `Dockerfile` |
+
+### Deliverables
+
+| Deliverable | Status |
+|-------------|--------|
+| GitHub repository | ✅ |
+| README with instructions | ✅ |
+| Support for custom API key | ✅ Via `.env` file |
+
+## Beyond the Requirements
+
+This implementation includes additional features not required by the challenge:
+
+| Extra Feature | Description |
+|---------------|-------------|
+| **Streaming responses** | Real-time text generation visible to users |
+| **Visual feedback** | Status updates showing tool execution in real-time |
+| **Multiple data fallbacks** | Robust yfinance integration with 3 fallback methods |
+| **Cryptocurrency support** | Bitcoin, Ethereum, and other crypto assets |
+| **Historical data** | `get_historical_data()` for extended analysis |
+| **Conversational context** | Maintains conversation history for follow-up questions |
+
 ## Features
 
 - Real-time stock and cryptocurrency prices
@@ -9,7 +61,7 @@ An AI-powered conversational agent that provides real-time stock market informat
 - Price change calculations (daily, weekly)
 - Average price calculations
 - Mathematical operations
-- Conversational interface
+- Streaming conversational interface with visual feedback
 
 ## Project Structure
 
@@ -17,7 +69,7 @@ An AI-powered conversational agent that provides real-time stock market informat
 .
 ├── src/
 │   ├── __init__.py
-│   ├── app.py          # Streamlit chat interface
+│   ├── app.py          # Streamlit chat interface with streaming
 │   ├── agent.py        # AI agent with OpenRouter integration
 │   └── tools.py        # Stock market tools using yfinance
 ├── .env.example        # Environment variables template
