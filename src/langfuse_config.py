@@ -1,6 +1,8 @@
 """
 Langfuse configuration for LLM observability.
 Provides tracing, metrics, and cost tracking for LLM calls.
+
+This integration is optional and gracefully handles errors.
 """
 
 import os
@@ -9,14 +11,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Check if Langfuse is configured
-LANGFUSE_ENABLED = bool(
-    os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY")
-)
+LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")
+LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY")
+LANGFUSE_ENABLED = bool(LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY)
 
 _langfuse_client = None
 
 
-def get_langfuse():
+def _get_client():
     """Get or create Langfuse client."""
     global _langfuse_client
 
@@ -26,7 +28,10 @@ def get_langfuse():
     if _langfuse_client is None:
         try:
             from langfuse import Langfuse
-            _langfuse_client = Langfuse()
+            _langfuse_client = Langfuse(
+                public_key=LANGFUSE_PUBLIC_KEY,
+                secret_key=LANGFUSE_SECRET_KEY,
+            )
             logger.info("Langfuse client initialized")
         except Exception as e:
             logger.warning(f"Failed to initialize Langfuse: {e}")
@@ -36,52 +41,34 @@ def get_langfuse():
 
 
 def create_trace(name: str, session_id: str = None, user_input: str = None, metadata: dict = None):
-    """
-    Create a Langfuse trace for observability.
-
-    Returns a trace object or None if Langfuse is not configured.
-    """
+    """Create a Langfuse trace. Returns trace object or None."""
     if not LANGFUSE_ENABLED:
         return None
 
     try:
-        from langfuse import get_client
-        langfuse = get_client()
+        client = _get_client()
+        if client is None:
+            return None
 
-        # Use start_as_current_observation for v3 SDK
-        trace = langfuse.start_as_current_observation(
-            as_type="span",
+        trace = client.trace(
             name=name,
+            session_id=session_id,
             input=user_input,
             metadata=metadata or {},
         )
-
-        # Set session_id if provided
-        if session_id:
-            from langfuse import update_current_trace
-            update_current_trace(session_id=session_id)
-
         return trace
     except Exception as e:
-        logger.warning(f"Failed to create Langfuse trace: {e}")
+        logger.debug(f"Langfuse trace creation skipped: {e}")
         return None
 
 
-def create_generation(name: str, model: str, messages: list, model_params: dict = None):
-    """
-    Create a Langfuse generation span for LLM calls.
-
-    Returns a generation object or None if Langfuse is not configured.
-    """
-    if not LANGFUSE_ENABLED:
+def create_generation(trace, name: str, model: str, messages: list, model_params: dict = None):
+    """Create a Langfuse generation span. Returns generation object or None."""
+    if not LANGFUSE_ENABLED or trace is None:
         return None
 
     try:
-        from langfuse import get_client
-        langfuse = get_client()
-
-        generation = langfuse.start_as_current_observation(
-            as_type="generation",
+        generation = trace.generation(
             name=name,
             model=model,
             input=messages,
@@ -89,53 +76,57 @@ def create_generation(name: str, model: str, messages: list, model_params: dict 
         )
         return generation
     except Exception as e:
-        logger.warning(f"Failed to create Langfuse generation: {e}")
+        logger.debug(f"Langfuse generation creation skipped: {e}")
         return None
 
 
-def create_span(name: str, input_data: dict = None):
-    """
-    Create a Langfuse span for tool calls.
-
-    Returns a span object or None if Langfuse is not configured.
-    """
-    if not LANGFUSE_ENABLED:
+def create_span(trace, name: str, input_data: dict = None):
+    """Create a Langfuse span. Returns span object or None."""
+    if not LANGFUSE_ENABLED or trace is None:
         return None
 
     try:
-        from langfuse import get_client
-        langfuse = get_client()
-
-        span = langfuse.start_as_current_observation(
-            as_type="span",
+        span = trace.span(
             name=name,
             input=input_data,
         )
         return span
     except Exception as e:
-        logger.warning(f"Failed to create Langfuse span: {e}")
+        logger.debug(f"Langfuse span creation skipped: {e}")
         return None
 
 
-def end_observation(observation, output=None, usage=None, level="DEFAULT", status_message=None):
-    """
-    End a Langfuse observation (trace, generation, or span).
-    """
-    if observation is None:
+def end_generation(generation, output=None, usage=None):
+    """End a Langfuse generation with output and usage."""
+    if generation is None:
         return
 
     try:
-        if usage:
-            observation.update(output=output, usage=usage)
-        elif output:
-            observation.update(output=output)
-
-        if level == "ERROR" and status_message:
-            observation.update(level=level, status_message=status_message)
-
-        observation.end()
+        generation.end(output=output, usage=usage)
     except Exception as e:
-        logger.warning(f"Failed to end Langfuse observation: {e}")
+        logger.debug(f"Langfuse generation end skipped: {e}")
+
+
+def end_span(span, output=None, level="DEFAULT"):
+    """End a Langfuse span with output."""
+    if span is None:
+        return
+
+    try:
+        span.end(output=output, level=level)
+    except Exception as e:
+        logger.debug(f"Langfuse span end skipped: {e}")
+
+
+def end_trace(trace, output=None):
+    """Update trace with final output."""
+    if trace is None:
+        return
+
+    try:
+        trace.update(output=output)
+    except Exception as e:
+        logger.debug(f"Langfuse trace update skipped: {e}")
 
 
 def flush():
@@ -144,8 +135,8 @@ def flush():
         return
 
     try:
-        from langfuse import get_client
-        langfuse = get_client()
-        langfuse.flush()
+        client = _get_client()
+        if client:
+            client.flush()
     except Exception as e:
-        logger.warning(f"Failed to flush Langfuse: {e}")
+        logger.debug(f"Langfuse flush skipped: {e}")

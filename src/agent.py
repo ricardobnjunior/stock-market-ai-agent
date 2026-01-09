@@ -25,7 +25,9 @@ from langfuse_config import (
     create_trace,
     create_generation,
     create_span,
-    end_observation,
+    end_generation,
+    end_span,
+    end_trace,
     flush,
 )
 
@@ -98,6 +100,7 @@ def call_llm(
     temperature: float = 0.7,
     max_tokens: int = 1024,
     stream: bool = False,
+    trace: Optional[object] = None,
 ) -> dict | requests.Response:
     """Call OpenRouter API."""
     api_key = get_api_key()
@@ -126,10 +129,11 @@ def call_llm(
 
     logger.info(f"Calling LLM (model={model}, stream={stream})")
 
-    # Create Langfuse generation if enabled and not streaming
+    # Create Langfuse generation if trace provided and not streaming
     generation = None
-    if LANGFUSE_ENABLED and not stream:
+    if trace and not stream:
         generation = create_generation(
+            trace=trace,
             name="llm-call",
             model=model,
             messages=messages,
@@ -157,7 +161,7 @@ def call_llm(
     if generation:
         output = result.get("choices", [{}])[0].get("message", {})
         usage_data = result.get("usage", {})
-        end_observation(
+        end_generation(
             generation,
             output=output,
             usage={
@@ -170,7 +174,7 @@ def call_llm(
     return result
 
 
-def execute_tool(tool_name: str, arguments: dict) -> str:
+def execute_tool(tool_name: str, arguments: dict, trace: Optional[object] = None) -> str:
     """Execute a tool and return the result as a string."""
     start_time = time.time()
 
@@ -182,8 +186,8 @@ def execute_tool(tool_name: str, arguments: dict) -> str:
 
     # Create Langfuse span for tool execution
     span = None
-    if LANGFUSE_ENABLED:
-        span = create_span(name=f"tool-{tool_name}", input_data=arguments)
+    if trace:
+        span = create_span(trace=trace, name=f"tool-{tool_name}", input_data=arguments)
 
     func = TOOL_FUNCTIONS[tool_name]
     result = func(**arguments)
@@ -196,11 +200,7 @@ def execute_tool(tool_name: str, arguments: dict) -> str:
 
     # End Langfuse span
     if span:
-        end_observation(
-            span,
-            output=result,
-            level="DEFAULT" if success else "ERROR",
-        )
+        end_span(span, output=result, level="DEFAULT" if success else "ERROR")
 
     if success:
         logger.info(f"Tool {tool_name} completed in {elapsed:.0f}ms")
@@ -268,7 +268,7 @@ def run_agent_with_streaming(
     yield {"status": "Analyzing your question...", "state": "running"}
 
     # First call - check if tools are needed (non-streaming to get tool calls)
-    response = call_llm(messages, tools=TOOLS, stream=False)
+    response = call_llm(messages, tools=TOOLS, stream=False, trace=trace)
     assistant_message = response["choices"][0]["message"]
 
     # Check if the model wants to use tools
@@ -287,7 +287,7 @@ def run_agent_with_streaming(
             yield {"status": status_msg, "state": "running"}
 
             # Execute tool
-            tool_result = execute_tool(tool_name, arguments)
+            tool_result = execute_tool(tool_name, arguments, trace=trace)
 
             # Show tool result
             yield {"tool_call": tool_name, "args": arguments, "result": json.loads(tool_result)}
@@ -302,7 +302,7 @@ def run_agent_with_streaming(
         yield {"status": "Generating response...", "state": "running"}
 
         # Second call with streaming
-        stream_response = call_llm(messages, tools=TOOLS, stream=True)
+        stream_response = call_llm(messages, tools=TOOLS, stream=True, trace=trace)
 
         full_response = ""
         for chunk in parse_sse_stream(stream_response):
@@ -321,19 +321,17 @@ def run_agent_with_streaming(
         else:
             # Stream the response
             yield {"status": "Generating response...", "state": "running"}
-            stream_response = call_llm(messages, stream=True)
+            stream_response = call_llm(messages, stream=True, trace=trace)
             full_response = ""
             for chunk in parse_sse_stream(stream_response):
                 full_response += chunk
                 yield chunk
 
     # End Langfuse trace with output
-    if trace:
-        end_observation(trace, output=full_response)
+    end_trace(trace, output=full_response)
 
     # Flush Langfuse events
-    if LANGFUSE_ENABLED:
-        flush()
+    flush()
 
     # Update conversation history
     updated_history = conversation_history.copy()
