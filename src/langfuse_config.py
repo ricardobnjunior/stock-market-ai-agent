@@ -4,8 +4,6 @@ Provides tracing, metrics, and cost tracking for LLM calls.
 """
 
 import os
-from functools import wraps
-from typing import Optional, Callable, Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -37,131 +35,117 @@ def get_langfuse():
     return _langfuse_client
 
 
-def trace_llm_call(
-    name: str = "llm-call",
-    model: Optional[str] = None,
-):
+def create_trace(name: str, session_id: str = None, user_input: str = None, metadata: dict = None):
     """
-    Decorator to trace LLM calls with Langfuse.
+    Create a Langfuse trace for observability.
 
-    Args:
-        name: Name of the trace
-        model: Model name for the generation
+    Returns a trace object or None if Langfuse is not configured.
     """
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            langfuse = get_langfuse()
-
-            if langfuse is None:
-                # Langfuse not configured, just run the function
-                return func(*args, **kwargs)
-
-            # Create trace
-            trace = langfuse.trace(name=name)
-
-            # Create generation span
-            generation = trace.generation(
-                name=f"{name}-generation",
-                model=model or kwargs.get("model", "unknown"),
-                input=kwargs.get("messages", args[0] if args else None),
-            )
-
-            try:
-                result = func(*args, **kwargs)
-
-                # Update generation with output
-                if isinstance(result, dict):
-                    output = result.get("choices", [{}])[0].get("message", {}).get("content")
-                    usage = result.get("usage", {})
-
-                    generation.end(
-                        output=output,
-                        usage={
-                            "input": usage.get("prompt_tokens", 0),
-                            "output": usage.get("completion_tokens", 0),
-                            "total": usage.get("total_tokens", 0),
-                        }
-                    )
-                else:
-                    generation.end(output=str(result))
-
-                return result
-
-            except Exception as e:
-                generation.end(
-                    output=None,
-                    level="ERROR",
-                    status_message=str(e),
-                )
-                raise
-
-        return wrapper
-    return decorator
-
-
-def trace_tool_call(name: str):
-    """
-    Decorator to trace tool calls with Langfuse.
-
-    Args:
-        name: Name of the tool
-    """
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            langfuse = get_langfuse()
-
-            if langfuse is None:
-                return func(*args, **kwargs)
-
-            trace = langfuse.trace(name=f"tool-{name}")
-            span = trace.span(
-                name=name,
-                input={"args": args, "kwargs": kwargs},
-            )
-
-            try:
-                result = func(*args, **kwargs)
-                span.end(output=result)
-                return result
-            except Exception as e:
-                span.end(
-                    output=None,
-                    level="ERROR",
-                    status_message=str(e),
-                )
-                raise
-
-        return wrapper
-    return decorator
-
-
-def create_session_trace(session_id: str, user_id: Optional[str] = None):
-    """
-    Create a trace for a chat session.
-
-    Args:
-        session_id: Unique session identifier
-        user_id: Optional user identifier
-
-    Returns:
-        Trace object or None if Langfuse is not configured
-    """
-    langfuse = get_langfuse()
-
-    if langfuse is None:
+    if not LANGFUSE_ENABLED:
         return None
 
-    return langfuse.trace(
-        name="chat-session",
-        session_id=session_id,
-        user_id=user_id,
-    )
+    try:
+        from langfuse import get_client
+        langfuse = get_client()
+
+        # Use start_as_current_observation for v3 SDK
+        trace = langfuse.start_as_current_observation(
+            as_type="span",
+            name=name,
+            input=user_input,
+            metadata=metadata or {},
+        )
+
+        # Set session_id if provided
+        if session_id:
+            from langfuse import update_current_trace
+            update_current_trace(session_id=session_id)
+
+        return trace
+    except Exception as e:
+        logger.warning(f"Failed to create Langfuse trace: {e}")
+        return None
+
+
+def create_generation(name: str, model: str, messages: list, model_params: dict = None):
+    """
+    Create a Langfuse generation span for LLM calls.
+
+    Returns a generation object or None if Langfuse is not configured.
+    """
+    if not LANGFUSE_ENABLED:
+        return None
+
+    try:
+        from langfuse import get_client
+        langfuse = get_client()
+
+        generation = langfuse.start_as_current_observation(
+            as_type="generation",
+            name=name,
+            model=model,
+            input=messages,
+            model_parameters=model_params or {},
+        )
+        return generation
+    except Exception as e:
+        logger.warning(f"Failed to create Langfuse generation: {e}")
+        return None
+
+
+def create_span(name: str, input_data: dict = None):
+    """
+    Create a Langfuse span for tool calls.
+
+    Returns a span object or None if Langfuse is not configured.
+    """
+    if not LANGFUSE_ENABLED:
+        return None
+
+    try:
+        from langfuse import get_client
+        langfuse = get_client()
+
+        span = langfuse.start_as_current_observation(
+            as_type="span",
+            name=name,
+            input=input_data,
+        )
+        return span
+    except Exception as e:
+        logger.warning(f"Failed to create Langfuse span: {e}")
+        return None
+
+
+def end_observation(observation, output=None, usage=None, level="DEFAULT", status_message=None):
+    """
+    End a Langfuse observation (trace, generation, or span).
+    """
+    if observation is None:
+        return
+
+    try:
+        if usage:
+            observation.update(output=output, usage=usage)
+        elif output:
+            observation.update(output=output)
+
+        if level == "ERROR" and status_message:
+            observation.update(level=level, status_message=status_message)
+
+        observation.end()
+    except Exception as e:
+        logger.warning(f"Failed to end Langfuse observation: {e}")
 
 
 def flush():
     """Flush any pending Langfuse events."""
-    langfuse = get_langfuse()
-    if langfuse:
+    if not LANGFUSE_ENABLED:
+        return
+
+    try:
+        from langfuse import get_client
+        langfuse = get_client()
         langfuse.flush()
+    except Exception as e:
+        logger.warning(f"Failed to flush Langfuse: {e}")

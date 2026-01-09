@@ -20,7 +20,14 @@ from tools import TOOLS, TOOL_FUNCTIONS
 from logging_config import setup_logging, get_logger, metrics
 from rate_limiter import llm_limiter, rate_limited, RateLimitExceeded
 from validation import sanitize_user_input
-from langfuse_config import get_langfuse, LANGFUSE_ENABLED
+from langfuse_config import (
+    LANGFUSE_ENABLED,
+    create_trace,
+    create_generation,
+    create_span,
+    end_observation,
+    flush,
+)
 
 # Setup logging
 logger = get_logger(__name__)
@@ -91,7 +98,6 @@ def call_llm(
     temperature: float = 0.7,
     max_tokens: int = 1024,
     stream: bool = False,
-    trace: Optional[object] = None,
 ) -> dict | requests.Response:
     """Call OpenRouter API."""
     api_key = get_api_key()
@@ -120,17 +126,14 @@ def call_llm(
 
     logger.info(f"Calling LLM (model={model}, stream={stream})")
 
-    # Create Langfuse generation if trace is provided
+    # Create Langfuse generation if enabled and not streaming
     generation = None
-    if trace and not stream:
-        generation = trace.generation(
+    if LANGFUSE_ENABLED and not stream:
+        generation = create_generation(
             name="llm-call",
             model=model,
-            input=messages,
-            model_parameters={
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-            },
+            messages=messages,
+            model_params={"temperature": temperature, "max_tokens": max_tokens},
         )
 
     response = requests.post(
@@ -153,24 +156,21 @@ def call_llm(
     # Update Langfuse generation with output and usage
     if generation:
         output = result.get("choices", [{}])[0].get("message", {})
-        usage = result.get("usage", {})
-        generation.end(
+        usage_data = result.get("usage", {})
+        end_observation(
+            generation,
             output=output,
             usage={
-                "input": usage.get("prompt_tokens", 0),
-                "output": usage.get("completion_tokens", 0),
-                "total": usage.get("total_tokens", 0),
+                "input": usage_data.get("prompt_tokens", 0),
+                "output": usage_data.get("completion_tokens", 0),
+                "total": usage_data.get("total_tokens", 0),
             },
         )
 
     return result
 
 
-def execute_tool(
-    tool_name: str,
-    arguments: dict,
-    trace: Optional[object] = None,
-) -> str:
+def execute_tool(tool_name: str, arguments: dict) -> str:
     """Execute a tool and return the result as a string."""
     start_time = time.time()
 
@@ -182,11 +182,8 @@ def execute_tool(
 
     # Create Langfuse span for tool execution
     span = None
-    if trace:
-        span = trace.span(
-            name=f"tool-{tool_name}",
-            input=arguments,
-        )
+    if LANGFUSE_ENABLED:
+        span = create_span(name=f"tool-{tool_name}", input_data=arguments)
 
     func = TOOL_FUNCTIONS[tool_name]
     result = func(**arguments)
@@ -199,7 +196,8 @@ def execute_tool(
 
     # End Langfuse span
     if span:
-        span.end(
+        end_observation(
+            span,
             output=result,
             level="DEFAULT" if success else "ERROR",
         )
@@ -258,12 +256,11 @@ def run_agent_with_streaming(
 
     # Create Langfuse trace for this conversation turn
     trace = None
-    langfuse = get_langfuse()
-    if langfuse:
-        trace = langfuse.trace(
+    if LANGFUSE_ENABLED:
+        trace = create_trace(
             name="agent-turn",
             session_id=session_id or str(uuid.uuid4()),
-            input=user_message,
+            user_input=user_message,
             metadata={"history_length": len(conversation_history)},
         )
 
@@ -271,7 +268,7 @@ def run_agent_with_streaming(
     yield {"status": "Analyzing your question...", "state": "running"}
 
     # First call - check if tools are needed (non-streaming to get tool calls)
-    response = call_llm(messages, tools=TOOLS, stream=False, trace=trace)
+    response = call_llm(messages, tools=TOOLS, stream=False)
     assistant_message = response["choices"][0]["message"]
 
     # Check if the model wants to use tools
@@ -289,8 +286,8 @@ def run_agent_with_streaming(
 
             yield {"status": status_msg, "state": "running"}
 
-            # Execute tool with trace
-            tool_result = execute_tool(tool_name, arguments, trace=trace)
+            # Execute tool
+            tool_result = execute_tool(tool_name, arguments)
 
             # Show tool result
             yield {"tool_call": tool_name, "args": arguments, "result": json.loads(tool_result)}
@@ -305,7 +302,7 @@ def run_agent_with_streaming(
         yield {"status": "Generating response...", "state": "running"}
 
         # Second call with streaming
-        stream_response = call_llm(messages, tools=TOOLS, stream=True, trace=trace)
+        stream_response = call_llm(messages, tools=TOOLS, stream=True)
 
         full_response = ""
         for chunk in parse_sse_stream(stream_response):
@@ -324,19 +321,19 @@ def run_agent_with_streaming(
         else:
             # Stream the response
             yield {"status": "Generating response...", "state": "running"}
-            stream_response = call_llm(messages, stream=True, trace=trace)
+            stream_response = call_llm(messages, stream=True)
             full_response = ""
             for chunk in parse_sse_stream(stream_response):
                 full_response += chunk
                 yield chunk
 
-    # Update Langfuse trace with output
+    # End Langfuse trace with output
     if trace:
-        trace.update(output=full_response)
+        end_observation(trace, output=full_response)
 
     # Flush Langfuse events
-    if langfuse:
-        langfuse.flush()
+    if LANGFUSE_ENABLED:
+        flush()
 
     # Update conversation history
     updated_history = conversation_history.copy()
