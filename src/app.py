@@ -16,7 +16,7 @@ setup_logging(level="INFO")
 # Page config
 st.set_page_config(
     page_title="Stock Market AI Agent",
-    page_icon="📈",
+    page_icon="$",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -183,14 +183,30 @@ st.markdown("""
         background: linear-gradient(180deg, #1E1E2E 0%, #2D2D44 100%);
     }
 
-    section[data-testid="stSidebar"] .stMarkdown {
-        color: #E0E0E0;
+    section[data-testid="stSidebar"] .stMarkdown,
+    section[data-testid="stSidebar"] .stMarkdown p,
+    section[data-testid="stSidebar"] .stMarkdown li {
+        color: #E0E0E0 !important;
     }
 
     section[data-testid="stSidebar"] h1,
     section[data-testid="stSidebar"] h2,
     section[data-testid="stSidebar"] h3 {
-        color: #FFFFFF;
+        color: #FFFFFF !important;
+    }
+
+    section[data-testid="stSidebar"] .stMetric label,
+    section[data-testid="stSidebar"] .stMetric [data-testid="stMetricLabel"] {
+        color: #A0A0B0 !important;
+    }
+
+    section[data-testid="stSidebar"] .stMetric [data-testid="stMetricValue"] {
+        color: #FFFFFF !important;
+    }
+
+    section[data-testid="stSidebar"] .stCaption,
+    section[data-testid="stSidebar"] small {
+        color: #A0A0B0 !important;
     }
 
     section[data-testid="stSidebar"] .stButton button {
@@ -238,7 +254,7 @@ def render_header():
     """Render the main header."""
     st.markdown("""
     <div class="main-header">
-        <h1>📈 Stock Market AI Agent</h1>
+        <h1>Stock Market AI Agent</h1>
         <p>Real-time stock prices, crypto data, charts, and comparisons powered by AI</p>
     </div>
     """, unsafe_allow_html=True)
@@ -287,7 +303,7 @@ def render_chart(chart_data: dict):
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #1E1E2E 0%, #2D2D44 100%);
                 color: white; padding: 0.75rem 1rem; border-radius: 12px 12px 0 0; margin-top: 1rem;">
-        <span style="font-size: 1.1rem; font-weight: 600;">📊 {symbol} Price Chart</span>
+        <span style="font-size: 1.1rem; font-weight: 600;">{symbol} Price Chart</span>
         <span style="float: right; color: #A0A0B0; font-size: 0.85rem;">{chart_data.get('period', '1mo').upper()}</span>
     </div>
     """, unsafe_allow_html=True)
@@ -309,7 +325,7 @@ def render_comparison(comparison_data: dict):
     st.markdown("""
     <div style="background: linear-gradient(135deg, #1E1E2E 0%, #2D2D44 100%);
                 color: white; padding: 0.75rem 1rem; border-radius: 12px 12px 0 0; margin-top: 1rem;">
-        <span style="font-size: 1.1rem; font-weight: 600;">📊 Stock Comparison</span>
+        <span style="font-size: 1.1rem; font-weight: 600;">Stock Comparison</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -324,7 +340,7 @@ def render_comparison(comparison_data: dict):
 
     # Format change with color
     df["change_display"] = df["change_percent"].apply(
-        lambda x: f"{'🟢' if x >= 0 else '🔴'} {x:+.2f}%"
+        lambda x: f"{'+' if x >= 0 else ''}{x:.2f}%"
     )
 
     # Rename columns for display
@@ -336,9 +352,9 @@ def render_comparison(comparison_data: dict):
     # Show best/worst
     col1, col2 = st.columns(2)
     with col1:
-        st.success(f"🏆 **Best Performer:** {comparison_data.get('best_performer')}")
+        st.success(f"**Best Performer:** {comparison_data.get('best_performer')}")
     with col2:
-        st.error(f"📉 **Worst Performer:** {comparison_data.get('worst_performer')}")
+        st.error(f"**Worst Performer:** {comparison_data.get('worst_performer')}")
 
 
 def render_sidebar():
@@ -347,7 +363,6 @@ def render_sidebar():
         # Logo/Title
         st.markdown("""
         <div style="text-align: center; padding: 1rem 0;">
-            <span style="font-size: 3rem;">📈</span>
             <h2 style="margin: 0.5rem 0 0 0;">Stock Agent</h2>
             <p style="color: #A0A0B0; font-size: 0.85rem;">AI-Powered Market Data</p>
         </div>
@@ -356,7 +371,7 @@ def render_sidebar():
         st.divider()
 
         # Session Metrics
-        st.markdown("### 📊 Session Metrics")
+        st.markdown("### Session Metrics")
 
         metrics_data = metrics.get_summary()
 
@@ -374,27 +389,27 @@ def render_sidebar():
             st.metric("Avg Time", f"{avg_time:.0f}ms" if avg_time > 0 else "N/A")
 
         # Cache Status
-        st.markdown("### 💾 Cache Status")
+        st.markdown("### Cache Status")
         st.caption(f"Price cache: {price_cache.size} items")
         st.caption(f"Historical cache: {historical_cache.size} items")
 
         st.divider()
 
         # Capabilities
-        st.markdown("### ✨ Capabilities")
+        st.markdown("### Capabilities")
         st.markdown("""
-        - 💰 **Real-time prices** for stocks & crypto
-        - 📊 **Interactive charts** with historical data
-        - 📈 **Price comparisons** side by side
-        - 🔄 **Price changes** and percentages
-        - 📅 **Average calculations** over periods
-        - 🧮 **Math operations** for analysis
+        - **Real-time prices** for stocks & crypto
+        - **Interactive charts** with historical data
+        - **Price comparisons** side by side
+        - **Price changes** and percentages
+        - **Average calculations** over periods
+        - **Math operations** for analysis
         """)
 
         st.divider()
 
         # Example prompts
-        st.markdown("### 💡 Try asking")
+        st.markdown("### Try asking")
         example_prompts = [
             "What's the current price of Tesla?",
             "Show me a chart of Bitcoin",
@@ -408,7 +423,7 @@ def render_sidebar():
         st.divider()
 
         # Clear button
-        if st.button("🗑️ Clear Conversation", use_container_width=True):
+        if st.button("Clear Conversation", use_container_width=True):
             st.session_state.messages = []
             st.session_state.conversation_history = []
             metrics.reset()
@@ -456,7 +471,7 @@ if prompt := st.chat_input("Ask about stocks, crypto, or calculations..."):
     # Display assistant response with streaming
     with st.chat_message("assistant"):
         # Status container for showing what's happening
-        status_container = st.status("🔍 Analyzing your question...", expanded=True)
+        status_container = st.status("Analyzing your question...", expanded=True)
 
         # Response placeholder for streaming text
         response_placeholder = st.empty()
@@ -478,7 +493,7 @@ if prompt := st.chat_input("Ask about stocks, crypto, or calculations..."):
                 if isinstance(item, dict):
                     if "status" in item:
                         # Update status
-                        status_container.update(label=f"🔄 {item['status']}", state="running")
+                        status_container.update(label=item['status'], state="running")
 
                     elif "tool_call" in item:
                         # Show tool execution
@@ -514,7 +529,7 @@ if prompt := st.chat_input("Ask about stocks, crypto, or calculations..."):
                             if "error" in result:
                                 st.markdown(f"""
                                 <div class="tool-result error">
-                                    ❌ <strong>{tool_name}</strong>: {result['error']}
+                                    <strong>{tool_name}</strong>: {result['error']}
                                 </div>
                                 """, unsafe_allow_html=True)
                             else:
@@ -535,27 +550,27 @@ if prompt := st.chat_input("Ask about stocks, crypto, or calculations..."):
                                 elif "average_price" in result:
                                     st.markdown(f"""
                                     <div class="tool-result">
-                                        📊 <strong>{result.get('symbol', ticker)}</strong>
+                                        <strong>{result.get('symbol', ticker)}</strong>
                                         {result['days']}-day average: <strong>${result['average_price']:,.2f}</strong>
                                     </div>
                                     """, unsafe_allow_html=True)
                                 elif "result" in result:
                                     st.markdown(f"""
                                     <div class="tool-result">
-                                        🧮 <strong>Calculation:</strong> {result['expression']} = <strong>{result['result']}</strong>
+                                        <strong>Calculation:</strong> {result['expression']} = <strong>{result['result']}</strong>
                                     </div>
                                     """, unsafe_allow_html=True)
                                 elif "comparison" in result:
                                     st.markdown(f"""
                                     <div class="tool-result">
-                                        📊 <strong>Compared {result['count']} stocks</strong> —
+                                        <strong>Compared {result['count']} stocks</strong> —
                                         Best: {result['best_performer']} | Worst: {result['worst_performer']}
                                     </div>
                                     """, unsafe_allow_html=True)
                                 elif "dates" in result:
                                     st.markdown(f"""
                                     <div class="tool-result">
-                                        📈 <strong>Chart ready</strong> for {result['symbol']} ({result['data_points']} data points)
+                                        <strong>Chart ready</strong> for {result['symbol']} ({result['data_points']} data points)
                                     </div>
                                     """, unsafe_allow_html=True)
                                 else:
@@ -564,7 +579,7 @@ if prompt := st.chat_input("Ask about stocks, crypto, or calculations..."):
                     elif "done" in item:
                         # Update conversation history
                         st.session_state.conversation_history = item["history"]
-                        status_container.update(label="✅ Complete", state="complete", expanded=False)
+                        status_container.update(label="Complete", state="complete", expanded=False)
 
                 else:
                     # Streaming text chunk
@@ -587,18 +602,18 @@ if prompt := st.chat_input("Ask about stocks, crypto, or calculations..."):
             st.session_state.messages.append(message_data)
 
         except ValueError as e:
-            status_container.update(label="❌ Error", state="error")
+            status_container.update(label="Error", state="error")
             error_msg = str(e)
-            st.error(f"⚠️ **Configuration Error:** {error_msg}")
+            st.error(f"**Configuration Error:** {error_msg}")
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": f"⚠️ Configuration Error: {error_msg}"
+                "content": f"Configuration Error: {error_msg}"
             })
         except Exception as e:
-            status_container.update(label="❌ Error", state="error")
+            status_container.update(label="Error", state="error")
             error_msg = str(e)
-            st.error(f"⚠️ **Error:** {error_msg}")
+            st.error(f"**Error:** {error_msg}")
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": f"⚠️ Error: {error_msg}"
+                "content": f"Error: {error_msg}"
             })
