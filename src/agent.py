@@ -54,16 +54,19 @@ TOOL_DESCRIPTIONS = {
 
 def get_api_key() -> str:
     """Get OpenRouter API key from environment or Streamlit secrets."""
-    # Try environment variable first
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    api_key = None
 
-    # Try Streamlit secrets (for Streamlit Cloud deployment)
+    # Try Streamlit secrets first (for Streamlit Cloud deployment)
+    try:
+        import streamlit as st
+        if "OPENROUTER_API_KEY" in st.secrets:
+            api_key = st.secrets["OPENROUTER_API_KEY"]
+    except Exception:
+        pass
+
+    # Fallback to environment variable
     if not api_key:
-        try:
-            import streamlit as st
-            api_key = st.secrets.get("OPENROUTER_API_KEY")
-        except Exception:
-            pass
+        api_key = os.getenv("OPENROUTER_API_KEY")
 
     if not api_key:
         raise ValueError(
