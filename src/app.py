@@ -5,6 +5,7 @@ Features streaming responses, real-time status feedback, charts, and professiona
 
 import streamlit as st
 import pandas as pd
+import uuid
 from datetime import datetime
 from agent import run_agent_with_streaming
 from logging_config import setup_logging, metrics
@@ -426,6 +427,7 @@ def render_sidebar():
         if st.button("Clear Conversation", use_container_width=True):
             st.session_state.messages = []
             st.session_state.conversation_history = []
+            st.session_state.session_id = str(uuid.uuid4())
             metrics.reset()
             st.rerun()
 
@@ -444,6 +446,9 @@ if "messages" not in st.session_state:
 
 if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = []
+
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
 
 # Render sidebar
 render_sidebar()
@@ -488,7 +493,8 @@ if prompt := st.chat_input("Ask about stocks, crypto, or calculations..."):
 
             for item in run_agent_with_streaming(
                 prompt,
-                st.session_state.conversation_history
+                st.session_state.conversation_history,
+                session_id=st.session_state.session_id,
             ):
                 if isinstance(item, dict):
                     if "status" in item:
