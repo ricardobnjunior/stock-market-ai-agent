@@ -5,12 +5,20 @@ Supports streaming responses and status callbacks.
 
 import os
 import json
+import time
 import requests
 from typing import Optional, Generator, Callable
 from dotenv import load_dotenv
+
 from tools import TOOLS, TOOL_FUNCTIONS
+from logging_config import setup_logging, get_logger, metrics
+from rate_limiter import llm_limiter, rate_limited, RateLimitExceeded
+from validation import sanitize_user_input
 
 load_dotenv()
+
+# Setup logging
+logger = get_logger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "openai/gpt-4o-mini"
@@ -38,18 +46,34 @@ TOOL_DESCRIPTIONS = {
     "get_price_change": "Calculating price change",
     "get_average_price": "Calculating average price",
     "get_historical_data": "Fetching historical data",
+    "get_chart_data": "Preparing chart data",
+    "compare_stocks": "Comparing stocks",
     "calculate": "Performing calculation",
 }
 
 
 def get_api_key() -> str:
-    """Get OpenRouter API key from environment."""
+    """Get OpenRouter API key from environment or Streamlit secrets."""
+    # Try environment variable first
     api_key = os.getenv("OPENROUTER_API_KEY")
+
+    # Try Streamlit secrets (for Streamlit Cloud deployment)
     if not api_key:
-        raise ValueError("OPENROUTER_API_KEY not found in .env file")
+        try:
+            import streamlit as st
+            api_key = st.secrets.get("OPENROUTER_API_KEY")
+        except Exception:
+            pass
+
+    if not api_key:
+        raise ValueError(
+            "OPENROUTER_API_KEY not found. "
+            "Set it in .env file or Streamlit Cloud secrets."
+        )
     return api_key
 
 
+@rate_limited(llm_limiter)
 def call_llm(
     messages: list,
     tools: Optional[list] = None,
@@ -60,6 +84,7 @@ def call_llm(
 ) -> dict | requests.Response:
     """Call OpenRouter API."""
     api_key = get_api_key()
+    start_time = time.time()
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -82,6 +107,8 @@ def call_llm(
         ]
         payload["tool_choice"] = "auto"
 
+    logger.info(f"Calling LLM (model={model}, stream={stream})")
+
     response = requests.post(
         OPENROUTER_URL,
         headers=headers,
@@ -91,6 +118,9 @@ def call_llm(
     )
     response.raise_for_status()
 
+    elapsed = (time.time() - start_time) * 1000
+    logger.info(f"LLM response received in {elapsed:.0f}ms")
+
     if stream:
         return response
     return response.json()
@@ -98,11 +128,29 @@ def call_llm(
 
 def execute_tool(tool_name: str, arguments: dict) -> str:
     """Execute a tool and return the result as a string."""
+    start_time = time.time()
+
     if tool_name not in TOOL_FUNCTIONS:
+        logger.warning(f"Unknown tool requested: {tool_name}")
         return json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+    logger.info(f"Executing tool: {tool_name} with args: {arguments}")
 
     func = TOOL_FUNCTIONS[tool_name]
     result = func(**arguments)
+
+    elapsed = (time.time() - start_time) * 1000
+    success = "error" not in result
+
+    # Record metrics
+    metrics.record_tool_call(tool_name, success, elapsed)
+
+    if success:
+        logger.info(f"Tool {tool_name} completed in {elapsed:.0f}ms")
+    else:
+        logger.warning(f"Tool {tool_name} failed: {result.get('error')}")
+        metrics.record_error("tool_error", f"{tool_name}: {result.get('error')}")
+
     return json.dumps(result)
 
 

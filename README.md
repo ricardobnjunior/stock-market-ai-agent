@@ -49,19 +49,28 @@ This implementation includes additional features not required by the challenge:
 |---------------|-------------|
 | **Streaming responses** | Real-time text generation visible to users |
 | **Visual feedback** | Status updates showing tool execution in real-time |
+| **Price charts** | Interactive line charts for historical data |
+| **Stock comparison** | Compare multiple stocks side by side |
+| **Cache system** | TTL-based cache to reduce API calls |
+| **Rate limiting** | Protection against excessive API usage |
+| **Input validation** | Sanitization of user inputs |
+| **Logging & metrics** | Error tracking and performance metrics |
+| **Unit tests** | Comprehensive test suite with pytest |
 | **Multiple data fallbacks** | Robust yfinance integration with 3 fallback methods |
 | **Cryptocurrency support** | Bitcoin, Ethereum, and other crypto assets |
-| **Historical data** | `get_historical_data()` for extended analysis |
 | **Conversational context** | Maintains conversation history for follow-up questions |
 
 ## Features
 
 - Real-time stock and cryptocurrency prices
-- Historical price data
+- Historical price data with chart visualization
 - Price change calculations (daily, weekly)
 - Average price calculations
+- Stock comparison (up to 5 stocks)
 - Mathematical operations
 - Streaming conversational interface with visual feedback
+- Caching for improved performance
+- Rate limiting for API protection
 
 ## Project Structure
 
@@ -69,10 +78,18 @@ This implementation includes additional features not required by the challenge:
 .
 ├── src/
 │   ├── __init__.py
-│   ├── app.py          # Streamlit chat interface with streaming
-│   ├── agent.py        # AI agent with OpenRouter integration
-│   └── tools.py        # Stock market tools using yfinance
-├── .env.example        # Environment variables template
+│   ├── app.py              # Streamlit chat interface with charts
+│   ├── agent.py            # AI agent with OpenRouter integration
+│   ├── tools.py            # Stock market tools using yfinance
+│   ├── cache.py            # TTL-based caching system
+│   ├── rate_limiter.py     # API rate limiting
+│   ├── validation.py       # Input validation and sanitization
+│   └── logging_config.py   # Logging and metrics
+├── tests/
+│   ├── __init__.py
+│   ├── test_tools.py       # Unit tests for tools
+│   └── test_agent.py       # Unit tests for agent
+├── .env.example            # Environment variables template
 ├── .gitignore
 ├── Dockerfile
 ├── requirements.txt
@@ -120,9 +137,19 @@ streamlit run app.py
 
 Open your browser and navigate to: `http://localhost:8501`
 
+## Running Tests
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ -v --cov=src --cov-report=term-missing
+```
+
 ## Using OpenAI API Instead of OpenRouter
 
-To use OpenAI directly, update `src/agent.py` line 15:
+To use OpenAI directly, update `src/agent.py` line 23:
 
 ```python
 OPENROUTER_URL = "https://api.openai.com/v1/chat/completions"
@@ -136,7 +163,8 @@ And rename `OPENROUTER_API_KEY` to `OPENAI_API_KEY` in your `.env` file.
 - "What was Bitcoin's price yesterday?"
 - "What's the percentage change in Apple compared to yesterday?"
 - "Calculate the average stock price of NVDA over the last week"
-- "Compare Tesla and Apple prices"
+- "Show me a chart of Tesla for the last month"
+- "Compare Tesla, Apple and Microsoft"
 
 ## Technology Stack
 
@@ -144,3 +172,4 @@ And rename `OPENROUTER_API_KEY` to `OPENAI_API_KEY` in your `.env` file.
 - **UI**: Streamlit
 - **Market Data**: yfinance
 - **Containerization**: Docker
+- **Testing**: pytest

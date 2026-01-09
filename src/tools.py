@@ -6,6 +6,19 @@ Provides functions to fetch real-time and historical market data.
 import yfinance as yf
 from datetime import datetime, timedelta
 from typing import Optional
+import logging
+
+from cache import price_cache, historical_cache, cached
+from rate_limiter import yfinance_limiter, rate_limited
+from validation import (
+    validate_ticker,
+    validate_days,
+    validate_period,
+    validate_expression,
+    ValidationError,
+)
+
+logger = logging.getLogger(__name__)
 
 
 # Common ticker mappings for crypto and popular assets
@@ -32,6 +45,18 @@ def normalize_ticker(ticker: str) -> str:
     return TICKER_ALIASES.get(normalized, ticker.upper())
 
 
+def _make_price_cache_key(ticker: str) -> str:
+    """Generate cache key for price queries."""
+    return f"price:{normalize_ticker(ticker)}"
+
+
+def _make_historical_cache_key(ticker: str, period: str = "1mo") -> str:
+    """Generate cache key for historical queries."""
+    return f"hist:{normalize_ticker(ticker)}:{period}"
+
+
+@rate_limited(yfinance_limiter)
+@cached(price_cache, key_func=lambda ticker: _make_price_cache_key(ticker))
 def get_current_price(ticker: str) -> dict:
     """
     Get current price for a stock or crypto.
@@ -43,7 +68,10 @@ def get_current_price(ticker: str) -> dict:
         Dictionary with price info or error message
     """
     try:
+        ticker = validate_ticker(ticker)
         symbol = normalize_ticker(ticker)
+        logger.info(f"Fetching current price for {symbol}")
+
         stock = yf.Ticker(symbol)
 
         price = None
@@ -55,7 +83,7 @@ def get_current_price(ticker: str) -> dict:
             fast = stock.fast_info
             price = fast.get("lastPrice") or fast.get("regularMarketPrice")
             currency = fast.get("currency", "USD")
-        except:
+        except Exception:
             pass
 
         # Method 2: Try info dict
@@ -65,7 +93,7 @@ def get_current_price(ticker: str) -> dict:
                 price = info.get("regularMarketPrice") or info.get("currentPrice")
                 currency = info.get("currency", "USD")
                 name = info.get("shortName", symbol)
-            except:
+            except Exception:
                 pass
 
         # Method 3: Try history as last resort
@@ -75,18 +103,25 @@ def get_current_price(ticker: str) -> dict:
                 price = float(hist["Close"].iloc[-1])
 
         if price is None:
+            logger.warning(f"Could not fetch price for {symbol}")
             return {"error": f"Could not fetch price for {symbol}. Please try again."}
 
+        logger.info(f"Got price for {symbol}: {price}")
         return {
             "symbol": symbol,
             "price": round(float(price), 2),
             "currency": currency,
             "name": name,
         }
+    except ValidationError as e:
+        return {"error": str(e)}
     except Exception as e:
+        logger.error(f"Error fetching {ticker}: {e}")
         return {"error": f"Error fetching {ticker}: {str(e)}"}
 
 
+@rate_limited(yfinance_limiter)
+@cached(price_cache, key_func=lambda ticker: f"yesterday:{normalize_ticker(ticker)}")
 def get_price_yesterday(ticker: str) -> dict:
     """
     Get yesterday's closing price for a stock or crypto.
@@ -98,7 +133,10 @@ def get_price_yesterday(ticker: str) -> dict:
         Dictionary with yesterday's price info
     """
     try:
+        ticker = validate_ticker(ticker)
         symbol = normalize_ticker(ticker)
+        logger.info(f"Fetching yesterday's price for {symbol}")
+
         stock = yf.Ticker(symbol)
         hist = stock.history(period="5d")
 
@@ -113,10 +151,15 @@ def get_price_yesterday(ticker: str) -> dict:
             "price": round(yesterday_close, 2),
             "date": yesterday_date,
         }
+    except ValidationError as e:
+        return {"error": str(e)}
     except Exception as e:
+        logger.error(f"Error fetching yesterday's price for {ticker}: {e}")
         return {"error": f"Error fetching yesterday's price for {ticker}: {str(e)}"}
 
 
+@rate_limited(yfinance_limiter)
+@cached(price_cache, key_func=lambda ticker: f"change:{normalize_ticker(ticker)}")
 def get_price_change(ticker: str) -> dict:
     """
     Calculate percentage change between yesterday and current price.
@@ -128,7 +171,10 @@ def get_price_change(ticker: str) -> dict:
         Dictionary with price change info
     """
     try:
+        ticker = validate_ticker(ticker)
         symbol = normalize_ticker(ticker)
+        logger.info(f"Calculating price change for {symbol}")
+
         stock = yf.Ticker(symbol)
         hist = stock.history(period="5d")
 
@@ -148,10 +194,15 @@ def get_price_change(ticker: str) -> dict:
             "change": round(change, 2),
             "percent_change": round(percent_change, 2),
         }
+    except ValidationError as e:
+        return {"error": str(e)}
     except Exception as e:
+        logger.error(f"Error calculating price change for {ticker}: {e}")
         return {"error": f"Error calculating price change for {ticker}: {str(e)}"}
 
 
+@rate_limited(yfinance_limiter)
+@cached(historical_cache, key_func=lambda ticker, days=7: f"avg:{normalize_ticker(ticker)}:{days}")
 def get_average_price(ticker: str, days: int = 7) -> dict:
     """
     Calculate average closing price over a period.
@@ -164,7 +215,11 @@ def get_average_price(ticker: str, days: int = 7) -> dict:
         Dictionary with average price info
     """
     try:
+        ticker = validate_ticker(ticker)
+        days = validate_days(days)
         symbol = normalize_ticker(ticker)
+        logger.info(f"Calculating {days}-day average for {symbol}")
+
         stock = yf.Ticker(symbol)
         hist = stock.history(period=f"{days + 10}d")
 
@@ -185,10 +240,15 @@ def get_average_price(ticker: str, days: int = 7) -> dict:
             "period_end": dates[-1],
             "daily_prices": dict(zip(dates, prices)),
         }
+    except ValidationError as e:
+        return {"error": str(e)}
     except Exception as e:
+        logger.error(f"Error calculating average for {ticker}: {e}")
         return {"error": f"Error calculating average for {ticker}: {str(e)}"}
 
 
+@rate_limited(yfinance_limiter)
+@cached(historical_cache, key_func=lambda ticker, period="1mo": _make_historical_cache_key(ticker, period))
 def get_historical_data(ticker: str, period: str = "1mo") -> dict:
     """
     Get historical price data.
@@ -201,7 +261,11 @@ def get_historical_data(ticker: str, period: str = "1mo") -> dict:
         Dictionary with historical data
     """
     try:
+        ticker = validate_ticker(ticker)
+        period = validate_period(period)
         symbol = normalize_ticker(ticker)
+        logger.info(f"Fetching historical data for {symbol} ({period})")
+
         stock = yf.Ticker(symbol)
         hist = stock.history(period=period)
 
@@ -219,8 +283,136 @@ def get_historical_data(ticker: str, period: str = "1mo") -> dict:
             "start_date": hist.index[0].strftime("%Y-%m-%d"),
             "end_date": hist.index[-1].strftime("%Y-%m-%d"),
         }
+    except ValidationError as e:
+        return {"error": str(e)}
     except Exception as e:
+        logger.error(f"Error fetching historical data for {ticker}: {e}")
         return {"error": f"Error fetching historical data for {ticker}: {str(e)}"}
+
+
+@rate_limited(yfinance_limiter)
+def get_chart_data(ticker: str, period: str = "1mo") -> dict:
+    """
+    Get data formatted for chart visualization.
+
+    Args:
+        ticker: Stock symbol or common name
+        period: Time period (1d, 5d, 1mo, 3mo, 6mo, 1y)
+
+    Returns:
+        Dictionary with chart-ready data
+    """
+    try:
+        ticker = validate_ticker(ticker)
+        period = validate_period(period)
+        symbol = normalize_ticker(ticker)
+        logger.info(f"Fetching chart data for {symbol} ({period})")
+
+        stock = yf.Ticker(symbol)
+        hist = stock.history(period=period)
+
+        if hist.empty:
+            return {"error": f"No data for {symbol}"}
+
+        # Prepare chart data
+        dates = [d.strftime("%Y-%m-%d") for d in hist.index]
+        closes = [round(p, 2) for p in hist["Close"].tolist()]
+        highs = [round(p, 2) for p in hist["High"].tolist()]
+        lows = [round(p, 2) for p in hist["Low"].tolist()]
+        volumes = [int(v) for v in hist["Volume"].tolist()]
+
+        return {
+            "symbol": symbol,
+            "period": period,
+            "dates": dates,
+            "close": closes,
+            "high": highs,
+            "low": lows,
+            "volume": volumes,
+            "data_points": len(dates),
+        }
+    except ValidationError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        logger.error(f"Error fetching chart data for {ticker}: {e}")
+        return {"error": f"Error fetching chart data for {ticker}: {str(e)}"}
+
+
+@rate_limited(yfinance_limiter)
+def compare_stocks(tickers: list[str]) -> dict:
+    """
+    Compare multiple stocks side by side.
+
+    Args:
+        tickers: List of stock symbols or names (max 5)
+
+    Returns:
+        Dictionary with comparison data
+    """
+    try:
+        if not tickers:
+            return {"error": "No tickers provided"}
+
+        if len(tickers) > 5:
+            return {"error": "Maximum 5 tickers allowed for comparison"}
+
+        results = []
+        errors = []
+
+        for ticker in tickers:
+            try:
+                ticker = validate_ticker(ticker)
+                symbol = normalize_ticker(ticker)
+                stock = yf.Ticker(symbol)
+                hist = stock.history(period="5d")
+
+                if len(hist) < 2:
+                    errors.append(f"Not enough data for {symbol}")
+                    continue
+
+                current = hist["Close"].iloc[-1]
+                yesterday = hist["Close"].iloc[-2]
+                change = ((current - yesterday) / yesterday) * 100
+
+                # Get additional info
+                try:
+                    info = stock.info
+                    market_cap = info.get("marketCap")
+                    name = info.get("shortName", symbol)
+                except Exception:
+                    market_cap = None
+                    name = symbol
+
+                results.append({
+                    "symbol": symbol,
+                    "name": name,
+                    "current_price": round(current, 2),
+                    "yesterday_price": round(yesterday, 2),
+                    "change_percent": round(change, 2),
+                    "market_cap": market_cap,
+                })
+
+            except ValidationError as e:
+                errors.append(str(e))
+            except Exception as e:
+                errors.append(f"Error with {ticker}: {str(e)}")
+
+        if not results:
+            return {"error": "Could not fetch data for any ticker", "details": errors}
+
+        # Sort by change percentage
+        results.sort(key=lambda x: x["change_percent"], reverse=True)
+
+        return {
+            "comparison": results,
+            "count": len(results),
+            "best_performer": results[0]["symbol"],
+            "worst_performer": results[-1]["symbol"],
+            "errors": errors if errors else None,
+        }
+    except Exception as e:
+        logger.error(f"Error comparing stocks: {e}")
+        return {"error": f"Error comparing stocks: {str(e)}"}
 
 
 def calculate(expression: str) -> dict:
@@ -234,16 +426,20 @@ def calculate(expression: str) -> dict:
         Dictionary with calculation result
     """
     try:
-        allowed = set("0123456789+-*/.() ")
-        if not all(c in allowed for c in expression):
-            return {"error": "Invalid characters in expression"}
+        expression = validate_expression(expression)
+        logger.info(f"Calculating: {expression}")
 
         result = eval(expression)
         return {
             "expression": expression,
             "result": round(result, 4) if isinstance(result, float) else result,
         }
+    except ValidationError as e:
+        return {"error": str(e)}
+    except ZeroDivisionError:
+        return {"error": "Division by zero"}
     except Exception as e:
+        logger.error(f"Calculation error: {e}")
         return {"error": f"Calculation error: {str(e)}"}
 
 
@@ -330,6 +526,41 @@ TOOLS = [
         }
     },
     {
+        "name": "get_chart_data",
+        "description": "Get price data formatted for chart visualization. Use when user wants to see a chart or graph.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {
+                    "type": "string",
+                    "description": "Stock symbol or name"
+                },
+                "period": {
+                    "type": "string",
+                    "description": "Time period: 1d, 5d, 1mo, 3mo, 6mo, 1y",
+                    "default": "1mo"
+                }
+            },
+            "required": ["ticker"]
+        }
+    },
+    {
+        "name": "compare_stocks",
+        "description": "Compare multiple stocks side by side. Shows current prices, changes, and identifies best/worst performers.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tickers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of stock symbols or names to compare (max 5)",
+                    "maxItems": 5
+                }
+            },
+            "required": ["tickers"]
+        }
+    },
+    {
         "name": "calculate",
         "description": "Perform mathematical calculations. Use for percentage calculations, averages, or any math operations.",
         "parameters": {
@@ -353,5 +584,7 @@ TOOL_FUNCTIONS = {
     "get_price_change": get_price_change,
     "get_average_price": get_average_price,
     "get_historical_data": get_historical_data,
+    "get_chart_data": get_chart_data,
+    "compare_stocks": compare_stocks,
     "calculate": calculate,
 }

@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""
+Hello World usando LLM via OpenRouter
+Exemplo simples de acesso ao LLM seguindo o padrão do projeto
+"""
+
+import os
+import requests
+
+# OpenRouter Configuration
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+YOUR_SITE_URL = "https://your-site.com"
+YOUR_SITE_NAME = "Hello World LLM"
+
+
+def call_openrouter(
+    messages: list,
+    api_key: str = None,
+    model: str = "openai/gpt-4o-mini",
+    max_tokens: int = 256,
+    temperature: float = 0.7,
+    timeout: int = 30
+) -> str:
+    """
+    Chama a API do OpenRouter e retorna a resposta do LLM.
+
+    Args:
+        messages: Lista de mensagens no formato [{"role": "user", "content": "..."}]
+        api_key: Chave da API OpenRouter (ou usa OPENROUTER_API_KEY do env)
+        model: Modelo a ser usado
+        max_tokens: Maximo de tokens na resposta
+        temperature: Temperatura de amostragem (0.0-1.0)
+        timeout: Timeout da requisicao em segundos
+
+    Returns:
+        Texto da resposta do LLM
+    """
+    # Obter API key
+    api_key = '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'
+    if not api_key:
+        raise ValueError("OPENROUTER_API_KEY nao configurada")
+
+    # Headers
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer": YOUR_SITE_URL,
+        "X-Title": YOUR_SITE_NAME,
+        "Content-Type": "application/json"
+    }
+
+    # Payload
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens
+    }
+
+    # Fazer requisicao
+    response = requests.post(
+        OPENROUTER_URL,
+        headers=headers,
+        json=payload,
+        timeout=timeout
+    )
+    response.raise_for_status()
+
+    # Extrair resposta
+    data = response.json()
+
+    if 'error' in data:
+        raise RuntimeError(f"Erro da API: {data['error']}")
+
+    return data['choices'][0]['message']['content'].strip()
+
+
+def main():
+    """Exemplo de uso - Hello World"""
+
+    print("=" * 50)
+    print("Hello World - LLM via OpenRouter")
+    print("=" * 50)
+
+    # Mensagem para o LLM
+    messages = [
+        {
+            "role": "user",
+            "content": "Diga 'Ola, mundo!' no estilo charlie harper + tony stark"
+        }
+    ]
+
+    try:
+        # Chamar o LLM
+        resposta = call_openrouter(messages)
+
+        print(f"\nResposta do LLM:\n{resposta}")
+        print("\n" + "=" * 50)
+
+    except ValueError as e:
+        print(f"\n[ERRO] Configuracao: {e}")
+        print("Defina a variavel de ambiente OPENROUTER_API_KEY")
+    except requests.exceptions.RequestException as e:
+        print(f"\n[ERRO] Requisicao: {e}")
+    except Exception as e:
+        print(f"\n[ERRO] {e}")
+
+
+if __name__ == "__main__":
+    main()
