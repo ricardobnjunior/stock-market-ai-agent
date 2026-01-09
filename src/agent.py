@@ -7,15 +7,18 @@ import os
 import json
 import time
 import requests
+from pathlib import Path
 from typing import Optional, Generator, Callable
 from dotenv import load_dotenv
+
+# Load .env from the same directory as this file
+_current_dir = Path(__file__).parent
+load_dotenv(_current_dir / ".env")
 
 from tools import TOOLS, TOOL_FUNCTIONS
 from logging_config import setup_logging, get_logger, metrics
 from rate_limiter import llm_limiter, rate_limited, RateLimitExceeded
 from validation import sanitize_user_input
-
-load_dotenv()
 
 # Setup logging
 logger = get_logger(__name__)
@@ -54,26 +57,24 @@ TOOL_DESCRIPTIONS = {
 
 def get_api_key() -> str:
     """Get OpenRouter API key from environment or Streamlit secrets."""
-    api_key = None
+    # Try environment variable first (works locally and in Docker)
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if api_key:
+        return api_key
 
-    # Try Streamlit secrets first (for Streamlit Cloud deployment)
+    # Try Streamlit secrets as fallback (for Streamlit Cloud deployment)
     try:
         import streamlit as st
-        if "OPENROUTER_API_KEY" in st.secrets:
-            api_key = st.secrets["OPENROUTER_API_KEY"]
+        api_key = st.secrets.get("OPENROUTER_API_KEY", None)
+        if api_key:
+            return api_key
     except Exception:
         pass
 
-    # Fallback to environment variable
-    if not api_key:
-        api_key = os.getenv("OPENROUTER_API_KEY")
-
-    if not api_key:
-        raise ValueError(
-            "OPENROUTER_API_KEY not found. "
-            "Set it in .env file or Streamlit Cloud secrets."
-        )
-    return api_key
+    raise ValueError(
+        "OPENROUTER_API_KEY not found. "
+        "Set it in .env file or Streamlit Cloud secrets."
+    )
 
 
 @rate_limited(llm_limiter)

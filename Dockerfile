@@ -8,7 +8,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY src/ ./src/
-COPY .env* ./
+
+# Copy .env to src directory where the app runs
+COPY .env* ./src/
 
 # Set working directory to src
 WORKDIR /app/src
