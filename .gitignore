@@ -45,3 +45,6 @@ Thumbs.db
 
 # Misc
 *.log
+
+# Reference materials (private)
+reference/
