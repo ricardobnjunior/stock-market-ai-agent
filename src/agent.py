@@ -34,12 +34,16 @@ You have access to tools that can:
 - Calculate price changes and percentage changes
 - Calculate average prices over a period
 - Get historical data
+- Compare multiple stocks (use compare_stocks when user mentions 2+ tickers)
+- Show price charts (use get_chart_data when user asks for charts/graphs)
 - Perform mathematical calculations
+
+IMPORTANT: When user wants to compare multiple stocks, use compare_stocks tool with all tickers at once. Do NOT call get_current_price multiple times.
 
 When users ask about stocks or crypto, use the appropriate tool to fetch real data.
 Common ticker mappings: Bitcoin=BTC-USD, Tesla=TSLA, Apple=AAPL, Google=GOOGL, Amazon=AMZN
 
-Always be helpful and offer to provide more information or comparisons.
+Always be helpful and provide a clear text summary after showing data.
 Keep responses concise but informative."""
 
 # Tool descriptions for user feedback

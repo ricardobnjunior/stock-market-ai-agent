@@ -546,7 +546,7 @@ TOOLS = [
     },
     {
         "name": "compare_stocks",
-        "description": "Compare multiple stocks side by side. Shows current prices, changes, and identifies best/worst performers.",
+        "description": "Compare multiple stocks side by side. ALWAYS use this tool when user wants to compare 2 or more stocks. Shows prices, percentage changes, and identifies best/worst performers. Do NOT call get_current_price multiple times - use this instead.",
         "parameters": {
             "type": "object",
             "properties": {
