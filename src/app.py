@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 import uuid
 from datetime import datetime
-from agent import run_agent_with_streaming
+from graph_agent import run_agent_with_streaming
 from logging_config import setup_logging, metrics
 from cache import price_cache, historical_cache
 
